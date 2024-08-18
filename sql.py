@@ -1,31 +1,22 @@
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch
+from typing import List
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-# Load the pre-trained GraphCodeBERT model and tokenizer
-model_name = "microsoft/graphcodebert-base"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+tokenizer = AutoTokenizer.from_pretrained("juierror/text-to-sql-with-table-schema")
+model = AutoModelForSeq2SeqLM.from_pretrained("juierror/text-to-sql-with-table-schema")
 
-def generate_sql_query(input_text):
-    # Tokenize the input text
-    inputs = tokenizer(input_text, return_tensors="pt", truncation=True, padding=True)
+def prepare_input(question: str, table: List[str]):
+    table_prefix = "table:"
+    question_prefix = "question:"
+    join_table = ",".join(table)
+    inputs = f"{question_prefix} {question} {table_prefix} {join_table}"
+    input_ids = tokenizer(inputs, max_length=700, return_tensors="pt").input_ids
+    return input_ids
 
-    # Generate SQL query using the model
-    outputs = model(**inputs)
-    
-    # Get the logits and convert them to probabilities
-    logits = outputs.logits
-    probabilities = torch.softmax(logits, dim=-1)
-    
-    # Post-process to extract SQL query based on the highest probability
-    predicted_index = torch.argmax(probabilities, dim=1).item()
-    
-    # Assuming the model predicts SQL templates; you would need to map the prediction to an actual SQL query
-    sql_template = "SELECT * FROM employees WHERE join_date > '2020-01-01'"  # Example template
-    
-    return sql_template
+def inference(question: str, table: List[str]) -> str:
+    input_data = prepare_input(question=question, table=table)
+    input_data = input_data.to(model.device)
+    outputs = model.generate(inputs=input_data, num_beams=10, top_k=10, max_length=700)
+    result = tokenizer.decode(token_ids=outputs[0], skip_special_tokens=True)
+    return result
 
-# Example usage
-input_text = "List all employees who joined after 2020"
-sql_query = generate_sql_query(input_text)
-print("Generated SQL Query:", sql_query)
+print(inference(question="get id and age whose name is Aman", table=["id", "name", "age"]))
